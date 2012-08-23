@@ -1,0 +1,6 @@
+* Tasks for the Day
+** Replace all whitespace in enemy's code with random tabs
+** Rewrite Emacs in the Bourne Shell
+** Try to come up with a time management system where I don't do any work
+** Stare at the computer screen blankly wishing I was outside
+* An Unrelated Heading
