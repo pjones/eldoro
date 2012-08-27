@@ -30,8 +30,13 @@
   :type 'integer
   :group 'eldoro)
 
-(defcustom eldoro-current-task-prompt ">"
+(defcustom eldoro-current-task-prompt " > "
   "The string to place in front of the active task."
+  :type 'string
+  :group 'eldoro)
+
+(defcustom eldoro-date-format "%A, %B %d, %Y"
+  "The date format used for pomodoro statistics."
   :type 'string
   :group 'eldoro)
 
@@ -41,6 +46,11 @@
 (defvar eldoro-source-marker nil)
 (defvar eldoro-active-marker nil)
 (defvar eldoro-timer nil)
+(defvar eldoro-clock 0)
+(defvar eldoro-clock-type nil)
+(defvar eldoro-pomodori 0)
+(defvar eldoro-breaks 0)
+(defvar eldoro-interrupts 0)
 
 ;;;###autoload
 (defun eldoro ()
@@ -50,8 +60,7 @@ already running bring its buffer forward."
   (unless (string= major-mode "org-mode")
     (error "Eldoro mode should be started from an org-mode heading"))
   (org-back-to-heading)
-  (setq eldoro-source-marker (make-marker))
-  (set-marker eldoro-source-marker (point))
+  (setq eldoro-source-marker (point-marker))
   (unless (> (eldoro-children-count) 0)
     (error "This heading doesn't have any children"))
   (switch-to-buffer (get-buffer-create eldoro-buffer-name))
@@ -88,12 +97,39 @@ already running bring its buffer forward."
 (defun eldoro-draw-buffer ()
   "Write the contents of the Eldoro buffer."
   (delete-region (point-min) (point-max))
+  (eldoro-draw-stats)
+  (insert "Tasks:\n\n")
   (eldoro-map-tree 'eldoro-draw-heading))
 
+(defun eldoro-draw-stats ()
+  (let ((indent (make-string (length eldoro-current-task-prompt) ? ))
+        (clock (number-to-string eldoro-clock))
+        (pomodori (number-to-string eldoro-pomodori))
+        (breaks (number-to-string eldoro-breaks))
+        (interrupts (number-to-string eldoro-interrupts)))
+    (insert (concat "Pomodoro statistics for "
+                    (format-time-string eldoro-date-format) ":\n\n"))
+    (cond
+     ((eq eldoro-clock-type 'work)
+      (insert (concat indent "    Break Timer: " clock "\n")))
+     ((eq eldoro-clock-type 'break)
+      (insert (concat indent " Pomodoro Timer: " clock "\n"))))
+    (insert (concat indent "       Pomodori: " pomodori "\n"))
+    (insert (concat indent "         Breaks: " breaks "\n"))
+    (insert (concat indent "  Interruptions: " interrupts "\n"))
+    (insert "\n\n")))
+
 (defun eldoro-draw-heading ()
-  (let ((task (substring-no-properties (org-get-heading t t))))
-    (with-current-buffer eldoro-buffer-name
-      (insert (concat task "\n")))))
+  (let ((heading (substring-no-properties (org-get-heading t t)))
+        (mark (point-marker))
+        (prompt (make-string (length eldoro-current-task-prompt) ? ))
+        task active)
+    (if (null eldoro-active-marker) (setq eldoro-active-marker mark))
+    (if (equal mark eldoro-active-marker) (setq active t))
+    (if active (setq prompt eldoro-current-task-prompt))
+    (setq task (concat prompt heading "\n"))
+    (put-text-property 0 (length task) 'eldoro-src mark task)
+    (with-current-buffer eldoro-buffer-name (insert task))))
 
 (define-derived-mode eldoro-mode fundamental-mode "Eldoro"
   "A major mode for showing pomodoro timers."
