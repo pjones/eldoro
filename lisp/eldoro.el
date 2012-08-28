@@ -56,8 +56,10 @@
 
 (defvar eldoro-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "q")   'eldoro-quit)
     (define-key map (kbd "g")   'eldoro-update)
+    (define-key map (kbd "i")   'eldoro-interruption)
+    (define-key map (kbd "q")   'eldoro-quit)
+    (define-key map (kbd "s")   'eldoro-clock-stop)
     (define-key map (kbd "RET") 'eldoro-clock-next)
     map)
   "Keymap used in Eldoro mode.")
@@ -98,7 +100,9 @@ already running bring its buffer forward."
   "Start the next appropriate clock (pomodoro or break)."
   (interactive)
   (if (not (eldoro-task-p)) (error "Please move point to a task first"))
-  (if eldoro--countdown-start (eldoro-clock-stop))
+  (let ((old eldoro--countdown-type))
+    (if eldoro--countdown-start (eldoro-clock-stop))
+    (setq eldoro--countdown-type old))
   (eldoro-clock-start))
 
 (defun eldoro-clock-start ()
@@ -108,17 +112,44 @@ already running bring its buffer forward."
   (let ((marker (eldoro-task-p)))
     (if (not marker) (error "Please move point to a task first"))
     (setq eldoro--active-marker marker
-          eldoro--countdown-start (current-time)
+          eldoro--countdown-start (float-time)
           eldoro--countdown-type (eldoro-next-clock-type)))
   (eldoro-update))
 
-(defun eldoro-clock-stop ()
-  "Stop the current pomodoro/break clock."
+(defun eldoro-clock-stop (&optional interruption)
+  "Stop the current pomodoro/break clock.  With a prefix argument
+abort the current pomodoro due to an interruption."
+  (interactive "P")
+  (if (not eldoro--countdown-start) (error "No task is in progress"))
+  (let ((restarting nil))
+    (cond
+     ;; Stop working (not an interruption).
+     ((and (eq eldoro--countdown-type 'work) (not interruption))
+      ;; FIXME: (eldoro-record-pomodoro)
+      (setq eldoro--pomodori (1+ eldoro--pomodori)))
+     ;; Restart work timer due to an interruption.
+     ((eq eldoro--countdown-type 'work)
+      ;; FIXME: (eldoro-record-interruption)
+      (setq eldoro--interrupts (1+ eldoro--interrupts)
+            eldoro--countdown-start (float-time)
+            restarting t))
+     ;; Stop during a break (not an interruption).
+     ((and (eq eldoro--countdown-type 'break) (not interruption))
+      (setq eldoro--breaks (1+ eldoro--breaks)))
+     ;; Restart a break due to an interruption.
+     ((eq eldoro--countdown-type 'break)
+      (setq eldoro--countdown-start (float-time) restarting t)))
+    (unless restarting
+      (setq eldoro--countdown-start nil
+            eldoro--countdown-type nil
+            eldoro--active-marker nil))
+    (eldoro-update)))
+
+(defun eldoro-interruption ()
+  "Abort the current pomodoro due to an interruption and start a
+new pomodoro."
   (interactive)
-  ;; FIXME: update counters and update properties.
-  (setq eldoro--countdown-start nil
-        eldoro--active-marker nil)
-  (eldoro-update))
+  (if eldoro--countdown-start (eldoro-clock-stop t)))
 
 ;;;-------------------------------------------------------------------------
 ;;; Internal Functions.
@@ -158,10 +189,8 @@ the marker associated with the task at point."
     (concat clock " " (eldoro-minutes-as-string min) ajd)))
 
 (defun eldoro-remaining (countdown)
-  (let ((now (float-time))
-        (then (float-time countdown)))
-    (round (- (eldoro-duration)
-              (/ (- now then) 60)))))
+  (round (- (eldoro-duration)
+            (/ (- (float-time) countdown) 60))))
 
 (defun eldoro-duration ()
   "Returns the number of minutes the clock should run for."
@@ -198,11 +227,12 @@ the marker associated with the task at point."
 
 (defun eldoro-draw-buffer ()
   "Write the contents of the Eldoro buffer."
-  (delete-region (point-min) (point-max))
-  (setq eldoro--leave-point 0)
-  (eldoro-draw-stats)
-  (insert "Tasks:\n\n")
-  (eldoro-map-tree 'eldoro-draw-heading)
+  (setq eldoro--leave-point (point))
+  (save-excursion
+    (delete-region (point-min) (point-max))
+    (eldoro-draw-stats)
+    (insert "Tasks:\n\n")
+    (eldoro-map-tree 'eldoro-draw-heading))
   (goto-char eldoro--leave-point))
 
 (defun eldoro-draw-stats ()
@@ -213,11 +243,12 @@ the marker associated with the task at point."
         (interrupts (number-to-string eldoro--interrupts)))
     (insert (concat "Pomodoro statistics for "
                     (format-time-string eldoro-date-format) ":\n\n"))
-    (cond
-     ((eq eldoro--countdown-type 'work)
-      (insert (concat indent " Pomodoro Timer: " clock "\n")))
-     ((eq eldoro--countdown-type 'break)
-      (insert (concat indent "    Break Timer: " clock "\n"))))
+    (if eldoro--countdown-start
+        (cond
+         ((eq eldoro--countdown-type 'work)
+          (insert (concat indent " Pomodoro Timer: " clock "\n")))
+         ((eq eldoro--countdown-type 'break)
+          (insert (concat indent "    Break Timer: " clock "\n")))))
     (insert (concat indent "       Pomodori: " pomodori "\n"))
     (insert (concat indent "         Breaks: " breaks "\n"))
     (insert (concat indent "  Interruptions: " interrupts "\n"))
@@ -228,13 +259,12 @@ the marker associated with the task at point."
         (mark (point-marker))
         (prompt (make-string (length eldoro-current-task-prompt) ? ))
         task active)
-    (if (equal mark eldoro--active-marker) (setq active t))
-    (if active (setq prompt eldoro-current-task-prompt))
+    (if (equal mark eldoro--active-marker)
+        (setq prompt eldoro-current-task-prompt active t))
     (setq task (concat prompt heading "\n"))
     (put-text-property 0 (length task) 'eldoro-src mark task)
     (with-current-buffer eldoro-buffer-name
-      (if (or (= 0 eldoro--leave-point) active)
-          (setq eldoro--leave-point (point)))
+      (if active (setq eldoro--leave-point (point)))
       (insert task))))
 
 (define-derived-mode eldoro-mode fundamental-mode "Eldoro"
