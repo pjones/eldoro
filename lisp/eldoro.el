@@ -43,17 +43,27 @@
 (defvar eldoro-buffer-name "*Eldoro*"
   "The name of the buffer used to show pomodoros.")
 
+(defvar eldoro-start-time nil)
 (defvar eldoro-source-marker nil)
 (defvar eldoro-active-marker nil)
 (defvar eldoro-timer nil)
 (defvar eldoro-clock 0)
 (defvar eldoro-clock-type nil)
+(defvar eldoro-clock-start nil)
 (defvar eldoro-pomodori 0)
 (defvar eldoro-breaks 0)
 (defvar eldoro-interrupts 0)
 (defvar eldoro-leave-point 0)
 
-;;;###autoload
+(defvar eldoro-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "q")   'eldoro-quit)
+    (define-key map (kbd "g")   'eldoro-update)
+    (define-key map (kbd "RET") 'eldoro-next-clock-state)
+    map)
+  "Keymap used in Eldoro mode.")
+
+;;;###Autoload
 (defun eldoro ()
   "Start Eldoro on the current org-mode heading.  If Eldoro is
 already running bring its buffer forward."
@@ -65,10 +75,57 @@ already running bring its buffer forward."
   (unless (> (eldoro-children-count) 0)
     (error "This heading doesn't have any children"))
   (switch-to-buffer (get-buffer-create eldoro-buffer-name))
+  (eldoro-reset)
   (eldoro-mode))
 
+(defun eldoro-update ()
+  "Update the Eldoro buffer."
+  (interactive)
+  (let ((buffer (get-buffer eldoro-buffer-name)))
+    (if (not buffer) (eldoro-stop-timer)
+      (with-current-buffer buffer
+        (let ((buffer-read-only nil))
+          (eldoro-draw-buffer))))))
+
+(defun eldoro-quit ()
+  "Stop the current timer and kill the Eldoro buffer."
+  (interactive)
+  (when (y-or-n-p "Really quit Eldoro? ")
+    (eldoro-stop-timer)
+    (eldoro-stop-clock)
+    (kill-buffer eldoro-buffer-name)))
+
+(defun eldoro-next-clock-state ()
+  "Start the appropriate clock (pomodoro or break) if the clock
+isn't running, otherwise stop the clock."
+  (interactive)
+  (if (not eldoro-clock-start) (eldoro-start-clock)
+    (eldoro-stop-clock)))
+
+(defun eldoro-start-clock ()
+  "Start a pomodoro or break clock for the task at point."
+  (interactive)
+  (if eldoro-clock-start (eldoro-stop-clock))
+  (with-current-buffer eldoro-buffer-name
+    (let ((marker (get-text-property (point) 'eldoro-src)))
+      (if (not marker) (error "Please move point to a task first"))
+      (setq eldoro-active-marker marker
+            eldoro-clock 0
+            eldoro-clock-start (current-time)
+            eldoro-clock-type (eldoro-next-clock-type))))
+  (eldoro-update))
+
+(defun eldoro-stop-clock ()
+  "Stop the current pomodoro/break clock."
+  (interactive)
+  (eldoro-reset))
+
+;;;-------------------------------------------------------------------------
+;;; Internal Functions.
+;;;-------------------------------------------------------------------------
+
 (defun eldoro-map-tree (eldoro-fun)
-  "Call `fun' for each child in the org source tree."
+  "Call `eldoro-fun' for each child in the org source tree."
   (let ((start-level))
     (with-current-buffer (marker-buffer eldoro-source-marker)
       (save-excursion
@@ -96,25 +153,48 @@ already running bring its buffer forward."
   "Stop the internal Emacs timer."
   (if eldoro-timer (setq eldoro-timer (cancel-timer eldoro-timer))))
 
-(defun eldoro-update ()
-  "Update the Eldoro buffer."
-  (interactive)
-  (let ((buffer (get-buffer eldoro-buffer-name)))
-    (if (not buffer) (eldoro-stop-timer)
-      (with-current-buffer buffer
-        (let ((buffer-read-only nil))
-          (eldoro-draw-buffer))))))
+(defun eldoro-reset ()
+  "Reset all counters."
+  (setq eldoro-start-time (current-time)
+        eldoro-clock 0
+        eldoro-clock-type nil
+        eldoro-clock-start nil
+        ;; eldoro-pomodori 0
+        ;; eldoro-breaks 0
+        ;; eldoro-interrupts 0
+        eldoro-leave-point 0
+        eldoro-active-marker nil))
 
-(defun eldoro-quit ()
-  "Stop the current timer and kill the Eldoro buffer."
-  (interactive)
-  (eldoro-stop-timer)
-  (kill-buffer eldoro-buffer-name))
+(defun eldoro-next-clock-type ()
+  (cond
+   ((eq eldoro-clock-type 'work)  'break)
+   ((eq eldoro-clock-type 'break) 'work)
+   (t 'work)))
+
+(defun eldoro-clock-length ()
+  "Returns the number of minutes the clock should run for."
+  (cond
+   ((eq eldoro-clock-type 'work)
+    eldoro-work-time)
+   ((and (eq eldoro-clock-type 'break)
+         (/= eldoro-pomodori 0)
+         (= (% eldoro-pomodori eldoro-long-break-after) 0))
+    eldoro-long-break)
+   (t eldoro-short-break)))
+
+(defun eldoro-update-clock ()
+  (when (and eldoro-clock-start eldoro-clock-type)
+    (let ((now (float-time))
+          (then (float-time eldoro-clock-start)))
+      (setq eldoro-clock
+            (round (- (eldoro-clock-length)
+                      (/ (- now then) 60)))))))
 
 (defun eldoro-draw-buffer ()
   "Write the contents of the Eldoro buffer."
   (delete-region (point-min) (point-max))
   (setq eldoro-leave-point 0)
+  (eldoro-update-clock)
   (eldoro-draw-stats)
   (insert "Tasks:\n\n")
   (eldoro-map-tree 'eldoro-draw-heading)
@@ -130,9 +210,9 @@ already running bring its buffer forward."
                     (format-time-string eldoro-date-format) ":\n\n"))
     (cond
      ((eq eldoro-clock-type 'work)
-      (insert (concat indent "    Break Timer: " clock "\n")))
+      (insert (concat indent " Pomodoro Timer: " clock "\n")))
      ((eq eldoro-clock-type 'break)
-      (insert (concat indent " Pomodoro Timer: " clock "\n"))))
+      (insert (concat indent "    Break Timer: " clock "\n"))))
     (insert (concat indent "       Pomodori: " pomodori "\n"))
     (insert (concat indent "         Breaks: " breaks "\n"))
     (insert (concat indent "  Interruptions: " interrupts "\n"))
@@ -157,7 +237,7 @@ already running bring its buffer forward."
   :group 'eldoro
   (setq buffer-read-only t)
   (toggle-truncate-lines 1)
-  (when eldoro-timer (cancel-timer eldoro-timer))
+  (eldoro-stop-timer)
   (setq eldoro-timer (run-at-time nil 10 'eldoro-update)))
 
 (provide 'eldoro)
