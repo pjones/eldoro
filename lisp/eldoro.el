@@ -100,6 +100,7 @@ title of the current task."
     (define-key map (kbd "g")   'eldoro-update)
     (define-key map (kbd "i")   'eldoro-interruption)
     (define-key map (kbd "q")   'eldoro-quit)
+    (define-key map (kbd "r")   'eldoro-reset-counters)
     (define-key map (kbd "s")   'eldoro-clock-stop)
     (define-key map (kbd "RET") 'eldoro-clock-next)
     map)
@@ -112,7 +113,7 @@ already running bring its buffer forward."
   (interactive)
   (unless (string= major-mode "org-mode")
     (error "Eldoro mode should be started from an org-mode heading"))
-  (eldoro-reset)
+  (eldoro-reset-vars)
   (org-back-to-heading)
   (setq eldoro--source-marker (point-marker))
   (unless (> (eldoro-children-count) 0)
@@ -123,12 +124,10 @@ already running bring its buffer forward."
 (defun eldoro-update ()
   "Update the Eldoro buffer."
   (interactive)
-  (if (not (string= (format-time-string "%Y%m%d" eldoro--start-time)
-                    (format-time-string "%Y%m%d")))
-      (setq eldoro--start-time (current-time)
-            eldoro--pomodori 0
-            eldoro--breaks 0
-            eldoro--interrupts 0))
+  (when (not (string= (format-time-string "%Y%m%d" eldoro--start-time)
+                      (format-time-string "%Y%m%d")))
+    (setq eldoro--start-time (current-time))
+    (eldoro-really-reset-counters))
   (let ((buffer (get-buffer eldoro-buffer-name)))
     (if (not buffer) (eldoro-timer-stop)
       (with-current-buffer buffer
@@ -202,6 +201,15 @@ new pomodoro."
   (interactive)
   (if eldoro--countdown-start (eldoro-clock-stop t)))
 
+(defun eldoro-reset-counters (&optional force)
+  "Reset the counters used to track pomodori, breaks, and
+interruptions.  With a prefix argument don't prompt for
+confirmation."
+  (interactive "P")
+  (when (or force (y-or-n-p "Really reset Eldoro counters? "))
+    (eldoro-really-reset-counters)
+    (eldoro-update)))
+
 ;;;-------------------------------------------------------------------------
 ;;; Internal Functions.
 ;;;-------------------------------------------------------------------------
@@ -258,8 +266,8 @@ the marker associated with the task at point."
   "Stop the internal Emacs timer."
   (if eldoro--timer (setq eldoro--timer (cancel-timer eldoro--timer))))
 
-(defun eldoro-reset ()
-  "Reset all counters."
+(defun eldoro-reset-vars ()
+  "Reset all internal variables tied to a given org file."
   (if eldoro--countdown-start (eldoro-clock-stop))
   (if (not eldoro--start-time) (setq eldoro--start-time (current-time)))
   (setq eldoro--countdown-type nil
@@ -267,6 +275,11 @@ the marker associated with the task at point."
         eldoro--sent-notification nil
         eldoro--leave-point 0
         eldoro--active-marker nil))
+
+(defun eldoro-really-reset-counters ()
+  (setq eldoro--pomodori 0
+        eldoro--breaks 0
+        eldoro--interrupts 0))
 
 (defun eldoro-next-clock-type ()
   (cond
