@@ -97,7 +97,9 @@ title of the current task."
 
 (defvar eldoro-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "b")   'bury-buffer)
     (define-key map (kbd "g")   'eldoro-update)
+    (define-key map (kbd "h")   'describe-mode)
     (define-key map (kbd "i")   'eldoro-interruption)
     (define-key map (kbd "q")   'eldoro-quit)
     (define-key map (kbd "r")   'eldoro-reset-counters)
@@ -106,20 +108,44 @@ title of the current task."
     map)
   "Keymap used in Eldoro mode.")
 
-;;;###Autoload
-(defun eldoro ()
+;;;###autoload
+(defun eldoro (&optional force-reset)
   "Start Eldoro on the current org-mode heading.  If Eldoro is
-already running bring its buffer forward."
+already running bring its buffer forward.
+
+If Eldoro has already been started and this function is called
+from an org-mode buffer, prompt for permission to reset the
+Eldoro tasks.  With a prefix argument force a reset without
+prompting."
   (interactive)
-  (unless (string= major-mode "org-mode")
-    (error "Eldoro mode should be started from an org-mode heading"))
-  (eldoro-reset-vars)
-  (org-back-to-heading)
-  (setq eldoro--source-marker (point-marker))
-  (unless (> (eldoro-children-count) 0)
-    (error "This heading doesn't have any children"))
-  (switch-to-buffer (get-buffer-create eldoro-buffer-name))
-  (eldoro-mode))
+  (cond
+   ;; We're in an org buffer and we're allowed to reset.
+   ((and (string= major-mode "org-mode")
+         (or (not eldoro--source-marker) force-reset
+             (y-or-n-p "Reset Eldoro from this org buffer? ")))
+    (if eldoro--countdown-start (eldoro-clock-stop))
+    (eldoro-reset-vars)
+    (save-excursion
+      (org-back-to-heading)
+      (setq eldoro--source-marker (point-marker)))
+    (unless (> (eldoro-children-count) 0)
+      (error "This heading doesn't have any children"))
+    (switch-to-buffer (get-buffer-create eldoro-buffer-name))
+    (eldoro-mode))
+   ;; There's an Eldoro buffer already.
+   ((get-buffer eldoro-buffer-name)
+    (switch-to-buffer eldoro-buffer-name))
+   ;; No Eldoro buffer, and we're not in an org-mode buffer.
+   (t
+    (error "Eldoro mode should be started from an org-mode heading"))))
+
+(define-derived-mode eldoro-mode fundamental-mode "Eldoro"
+  "A major mode for showing pomodoro timers."
+  :group 'eldoro
+  (setq buffer-read-only t)
+  (toggle-truncate-lines 1)
+  (eldoro-timer-stop)
+  (setq eldoro--timer (run-at-time nil 10 'eldoro-update)))
 
 (defun eldoro-update ()
   "Update the Eldoro buffer."
@@ -129,20 +155,19 @@ already running bring its buffer forward."
     (setq eldoro--start-time (current-time))
     (eldoro-really-reset-counters))
   (let ((buffer (get-buffer eldoro-buffer-name)))
-    (if (not buffer) (eldoro-timer-stop)
+    (if (not buffer) (progn (eldoro-timer-stop) (eldoro-reset-vars))
       (with-current-buffer buffer
-        (let ((buffer-read-only nil))
-          (eldoro-draw-buffer)))))
-  (if (and eldoro--countdown-start
-           (<= (eldoro-remaining eldoro--countdown-start) 0))
+        (let ((buffer-read-only nil)) (eldoro-draw-buffer)))))
+  (if (and eldoro--countdown-start (<= (eldoro-remaining) 0))
       (eldoro-send-notification)))
 
 (defun eldoro-quit ()
   "Stop the current timer and kill the Eldoro buffer."
   (interactive)
   (when (y-or-n-p "Really quit Eldoro? ")
-    (eldoro-timer-stop)
     (if eldoro--countdown-start (eldoro-clock-stop))
+    (eldoro-timer-stop)
+    (eldoro-reset-vars)
     (kill-buffer eldoro-buffer-name)))
 
 (defun eldoro-clock-next ()
@@ -215,7 +240,7 @@ confirmation."
 ;;;-------------------------------------------------------------------------
 
 (defun eldoro-map-tree (eldoro-fun)
-  "Call `eldoro-fun' for each child in the org source tree."
+  "Call ELDORO-FUN for each child in the org source tree."
   (let ((start-level))
     (with-current-buffer (marker-buffer eldoro--source-marker)
       (save-excursion
@@ -247,7 +272,8 @@ the marker associated with the task at point."
          (clock (number-to-string (abs min))))
     (concat clock " " (eldoro-minutes-as-string min) ajd)))
 
-(defun eldoro-remaining (countdown)
+(defun eldoro-remaining (&optional countdown)
+  (setq countdown (or countdown eldoro--countdown-start))
   (round (- (eldoro-duration)
             (/ (- (float-time) countdown) 60))))
 
@@ -274,6 +300,7 @@ the marker associated with the task at point."
         eldoro--countdown-start nil
         eldoro--sent-notification nil
         eldoro--leave-point 0
+        eldoro--source-marker nil
         eldoro--active-marker nil))
 
 (defun eldoro-really-reset-counters ()
@@ -290,13 +317,13 @@ the marker associated with the task at point."
 (defun eldoro-draw-buffer ()
   "Write the contents of the Eldoro buffer."
   (setq eldoro--leave-point (point))
-  (save-excursion
-    (delete-region (point-min) (point-max))
-    (eldoro-draw-stats)
-    (insert (propertize (concat (eldoro-parent-task-heading) ":")
-                        'face 'eldoro-header))
-    (insert "\n\n")
-    (eldoro-map-tree 'eldoro-draw-heading))
+  (erase-buffer)
+  (eldoro-draw-stats)
+  (insert (propertize (concat (eldoro-parent-task-heading) ":")
+                      'face 'eldoro-header))
+  (insert "\n\n")
+  (eldoro-map-tree 'eldoro-draw-heading)
+  (set-buffer-modified-p nil)
   (goto-char eldoro--leave-point))
 
 (defun eldoro-draw-stats ()
@@ -330,15 +357,14 @@ the marker associated with the task at point."
     (setq task (concat prompt heading))
     (put-text-property 0 (length task) 'eldoro-src mark task)
     (with-current-buffer eldoro-buffer-name
-      (if active
-          (progn
-            (setq eldoro--leave-point (point))
-            (insert (propertize task 'face 'eldoro-active-task)))
+      (if (and active (= 0 eldoro--leave-point))
+          (setq eldoro--leave-point (point)))
+      (if active (insert (propertize task 'face 'eldoro-active-task))
         (insert task))
       (insert "\n"))))
 
 (defun eldoro-get-task-heading (marker)
-  "Returns the heading text for the heading at `marker'."
+  "Returns the heading text for the heading at MARKER."
   (when marker
     (with-current-buffer (marker-buffer marker)
       (save-excursion
@@ -372,13 +398,5 @@ the marker associated with the task at point."
                  eldoro-break-end-msg)))
       (funcall eldoro-notify-function
                (format msg (eldoro-active-task-heading))))))
-
-(define-derived-mode eldoro-mode fundamental-mode "Eldoro"
-  "A major mode for showing pomodoro timers."
-  :group 'eldoro
-  (setq buffer-read-only t)
-  (toggle-truncate-lines 1)
-  (eldoro-timer-stop)
-  (setq eldoro--timer (run-at-time nil 10 'eldoro-update)))
 
 (provide 'eldoro)

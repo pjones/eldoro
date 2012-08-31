@@ -8,3 +8,7 @@
    CLOSED: [2012-08-31 Fri 13:49]
 * Bugs
 ** TODO Point jumps to 0 when buffer isn't focused
+   When the Eldoro buffer is in a window, but that window isn't
+   focused, when the eldoro-update function is done running point is
+   at (point-min) for some reason.  This doesn't happen if the buffer
+   isn't in a window, or if the buffer is in the focused window.
