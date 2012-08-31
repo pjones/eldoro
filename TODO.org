@@ -3,7 +3,8 @@
 
 * Features
 ** TODO Record the pomodori/breaks in the org file
-** TODO Use font-locking for major sections
 ** TODO Automated Tests
+** DONE Use font-locking for major sections
+   CLOSED: [2012-08-31 Fri 13:49]
 * Bugs
 ** TODO Point jumps to 0 when buffer isn't focused

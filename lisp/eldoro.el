@@ -64,6 +64,22 @@ title of the current task."
   :type 'string
   :group 'eldoro)
 
+(defgroup eldoro-faces nil
+  "Customize the appearance of Eldoro."
+  :prefix "eldoro-"
+  :group 'faces
+  :group 'eldoro)
+
+(defface eldoro-header
+  '((t :inherit header-line))
+  "Face for the header lines in the Eldoro buffer."
+  :group 'eldoro-faces)
+
+(defface eldoro-active-task
+  '((t :inherit highlight))
+  "Face for the active task in Eldoro."
+  :group 'eldoro-faces)
+
 (defvar eldoro-buffer-name "*Eldoro*"
   "The name of the buffer used to show pomodoros.")
 
@@ -264,7 +280,9 @@ the marker associated with the task at point."
   (save-excursion
     (delete-region (point-min) (point-max))
     (eldoro-draw-stats)
-    (insert (concat (eldoro-parent-task-heading) ":\n\n"))
+    (insert (propertize (concat (eldoro-parent-task-heading) ":")
+                        'face 'eldoro-header))
+    (insert "\n\n")
     (eldoro-map-tree 'eldoro-draw-heading))
   (goto-char eldoro--leave-point))
 
@@ -274,8 +292,10 @@ the marker associated with the task at point."
         (pomodori (number-to-string eldoro--pomodori))
         (breaks (number-to-string eldoro--breaks))
         (interrupts (number-to-string eldoro--interrupts)))
-    (insert (concat "Pomodoro statistics for "
-                    (format-time-string eldoro-date-format) ":\n\n"))
+    (insert (propertize (concat "Pomodoro statistics for "
+                                (format-time-string eldoro-date-format) ":")
+                        'face 'eldoro-header))
+    (insert "\n\n")
     (if eldoro--countdown-start
         (cond
          ((eq eldoro--countdown-type 'work)
@@ -294,11 +314,15 @@ the marker associated with the task at point."
         task active)
     (if (equal mark eldoro--active-marker)
         (setq prompt eldoro-current-task-prompt active t))
-    (setq task (concat prompt heading "\n"))
+    (setq task (concat prompt heading))
     (put-text-property 0 (length task) 'eldoro-src mark task)
     (with-current-buffer eldoro-buffer-name
-      (if active (setq eldoro--leave-point (point)))
-      (insert task))))
+      (if active
+          (progn
+            (setq eldoro--leave-point (point))
+            (insert (propertize task 'face 'eldoro-active-task)))
+        (insert task))
+      (insert "\n"))))
 
 (defun eldoro-get-task-heading (marker)
   "Returns the heading text for the heading at `marker'."
