@@ -1,0 +1,9 @@
+#+title: To-do List for Eldoro
+#+author: Peter Jones
+
+* Features
+** TODO Record the pomodori/breaks in the org file
+** TODO Use font-locking for major sections
+** TODO Automated Tests
+* Bugs
+** TODO Point jumps to 0 when buffer isn't focused

@@ -2,7 +2,8 @@
 
 ;;; Code
 (eval-when-compile
-  (require 'org))
+  (require 'org)
+  (require 'org-clock))
 
 (defgroup eldoro nil
   "A pomodoro timer that works with org-mode."
@@ -40,6 +41,29 @@
   :type 'string
   :group 'eldoro)
 
+(defcustom eldoro-notify-function 'org-notify
+  "A function to call to notify the user that a pomodoro or break
+  has expired.  The function should take a single argument, a
+  string to display to the user."
+  :type 'function
+  :group 'eldoro)
+
+(defcustom eldoro-pomodoro-end-msg
+  "The current pomodoro for \"%s\" has ended.  Time for a break!"
+  "A notification message shown when a pomodoro has ended.  The
+string is run through `format' with one string argument, the
+title of the current task."
+  :type 'string
+  :group 'eldoro)
+
+(defcustom eldoro-break-end-msg
+  "The current break has ended.  Get back to work!"
+  "A notification message shown when a break has ended.  The
+string is run through `format' with one string argument, the
+title of the current task."
+  :type 'string
+  :group 'eldoro)
+
 (defvar eldoro-buffer-name "*Eldoro*"
   "The name of the buffer used to show pomodoros.")
 
@@ -53,6 +77,7 @@
 (defvar eldoro--interrupts 0)
 (defvar eldoro--leave-point 0)
 (defvar eldoro--timer nil)
+(defvar eldoro--sent-notification nil)
 
 (defvar eldoro-mode-map
   (let ((map (make-sparse-keymap)))
@@ -82,18 +107,27 @@ already running bring its buffer forward."
 (defun eldoro-update ()
   "Update the Eldoro buffer."
   (interactive)
+  (if (not (string= (format-time-string "%Y%m%d" eldoro--start-time)
+                    (format-time-string "%Y%m%d")))
+      (setq eldoro--start-time (current-time)
+            eldoro--pomodori 0
+            eldoro--breaks 0
+            eldoro--interrupts 0))
   (let ((buffer (get-buffer eldoro-buffer-name)))
     (if (not buffer) (eldoro-timer-stop)
       (with-current-buffer buffer
         (let ((buffer-read-only nil))
-          (eldoro-draw-buffer))))))
+          (eldoro-draw-buffer)))))
+  (if (and eldoro--countdown-start
+           (<= (eldoro-remaining eldoro--countdown-start) 0))
+      (eldoro-send-notification)))
 
 (defun eldoro-quit ()
   "Stop the current timer and kill the Eldoro buffer."
   (interactive)
   (when (y-or-n-p "Really quit Eldoro? ")
     (eldoro-timer-stop)
-    (eldoro-clock-stop)
+    (if eldoro--countdown-start (eldoro-clock-stop))
     (kill-buffer eldoro-buffer-name)))
 
 (defun eldoro-clock-next ()
@@ -113,7 +147,8 @@ already running bring its buffer forward."
     (if (not marker) (error "Please move point to a task first"))
     (setq eldoro--active-marker marker
           eldoro--countdown-start (float-time)
-          eldoro--countdown-type (eldoro-next-clock-type)))
+          eldoro--countdown-type (eldoro-next-clock-type)
+          eldoro--sent-notification nil))
   (eldoro-update))
 
 (defun eldoro-clock-stop (&optional interruption)
@@ -125,20 +160,20 @@ abort the current pomodoro due to an interruption."
     (cond
      ;; Stop working (not an interruption).
      ((and (eq eldoro--countdown-type 'work) (not interruption))
-      ;; FIXME: (eldoro-record-pomodoro)
+      (eldoro-record-pomodoro)
       (setq eldoro--pomodori (1+ eldoro--pomodori)))
      ;; Restart work timer due to an interruption.
      ((eq eldoro--countdown-type 'work)
-      ;; FIXME: (eldoro-record-interruption)
-      (setq eldoro--interrupts (1+ eldoro--interrupts)
-            eldoro--countdown-start (float-time)
-            restarting t))
+      (eldoro-record-interruption)
+      (setq eldoro--interrupts (1+ eldoro--interrupts)))
      ;; Stop during a break (not an interruption).
      ((and (eq eldoro--countdown-type 'break) (not interruption))
       (setq eldoro--breaks (1+ eldoro--breaks)))
      ;; Restart a break due to an interruption.
      ((eq eldoro--countdown-type 'break)
-      (setq eldoro--countdown-start (float-time) restarting t)))
+      (setq eldoro--countdown-start (float-time)
+            eldoro--sent-notification nil
+            restarting t)))
     (unless restarting
       (setq eldoro--countdown-start nil
             eldoro--countdown-type nil
@@ -209,13 +244,11 @@ the marker associated with the task at point."
 
 (defun eldoro-reset ()
   "Reset all counters."
-  (setq eldoro--start-time (current-time)
-        eldoro-clock 0
-        eldoro--countdown-type nil
+  (if eldoro--countdown-start (eldoro-clock-stop))
+  (if (not eldoro--start-time) (setq eldoro--start-time (current-time)))
+  (setq eldoro--countdown-type nil
         eldoro--countdown-start nil
-        ;; eldoro--pomodori 0
-        ;; eldoro--breaks 0
-        ;; eldoro--interrupts 0
+        eldoro--sent-notification nil
         eldoro--leave-point 0
         eldoro--active-marker nil))
 
@@ -231,7 +264,7 @@ the marker associated with the task at point."
   (save-excursion
     (delete-region (point-min) (point-max))
     (eldoro-draw-stats)
-    (insert "Tasks:\n\n")
+    (insert (concat (eldoro-parent-task-heading) ":\n\n"))
     (eldoro-map-tree 'eldoro-draw-heading))
   (goto-char eldoro--leave-point))
 
@@ -266,6 +299,42 @@ the marker associated with the task at point."
     (with-current-buffer eldoro-buffer-name
       (if active (setq eldoro--leave-point (point)))
       (insert task))))
+
+(defun eldoro-get-task-heading (marker)
+  "Returns the heading text for the heading at `marker'."
+  (when marker
+    (with-current-buffer (marker-buffer marker)
+      (save-excursion
+        (goto-char (marker-position marker))
+        (substring-no-properties (org-get-heading t t))))))
+
+(defun eldoro-parent-task-heading ()
+  "Returns the heading text for the task Eldoro was started on."
+  (eldoro-get-task-heading eldoro--source-marker))
+
+(defun eldoro-active-task-heading ()
+  "Returns the heading text for the active task."
+  (eldoro-get-task-heading eldoro--active-marker))
+
+(defun eldoro-record-pomodoro ()
+  "Increment the number of pomodori for the active task."
+  ;; FIXME: implement me.
+  )
+
+(defun eldoro-record-interruption ()
+  "Increment the number of interruptions for the active task."
+  ;; FIXME: implement me.
+  )
+
+(defun eldoro-send-notification ()
+  "Send a notification that a pomodoro or break ended."
+  (when (and (not eldoro--sent-notification) eldoro-notify-function)
+    (setq eldoro--sent-notification t)
+    (let ((msg (if (eq eldoro--countdown-type 'work)
+                   eldoro-pomodoro-end-msg
+                 eldoro-break-end-msg)))
+      (funcall eldoro-notify-function
+               (format msg (eldoro-active-task-heading))))))
 
 (define-derived-mode eldoro-mode fundamental-mode "Eldoro"
   "A major mode for showing pomodoro timers."
