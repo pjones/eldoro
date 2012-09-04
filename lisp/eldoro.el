@@ -64,6 +64,24 @@ title of the current task."
   :type 'string
   :group 'eldoro)
 
+(defcustom eldoro-record-in-properties t
+  "If non-nil, record the number of pomodori and interruptions
+into the source org buffer using properties."
+  :type 'boolean
+  :group 'eldoro)
+
+(defcustom eldoro-pomodoro-property "ELDORO_POMODORI"
+  "The name of the org-mode property in which to store pomodoro
+counts."
+  :type 'string
+  :group 'eldoro)
+
+(defcustom eldoro-interruption-property "ELDORO_INTERRUPTIONS"
+  "The name of the org-mode property in which to store
+  interruption counts."
+  :type 'string
+  :group 'eldoro)
+
 (defgroup eldoro-faces nil
   "Customize the appearance of Eldoro."
   :prefix "eldoro-"
@@ -142,8 +160,8 @@ prompting."
 (define-derived-mode eldoro-mode fundamental-mode "Eldoro"
   "A major mode for showing pomodoro timers."
   :group 'eldoro
-  (setq buffer-read-only t)
-  (toggle-truncate-lines 1)
+  (setq buffer-read-only t
+        truncate-lines t)
   (eldoro-timer-stop)
   (setq eldoro--timer (run-at-time nil 10 'eldoro-update)))
 
@@ -363,13 +381,20 @@ the marker associated with the task at point."
         (insert task))
       (insert "\n"))))
 
-(defun eldoro-get-task-heading (marker)
-  "Returns the heading text for the heading at MARKER."
-  (when marker
-    (with-current-buffer (marker-buffer marker)
+(defun eldoro-at-marker (marker fun)
+  "Move to MARKER and apply FUN."
+  (setq marker (or marker eldoro--active-marker))
+  (with-current-buffer (marker-buffer marker)
       (save-excursion
         (goto-char (marker-position marker))
-        (substring-no-properties (org-get-heading t t))))))
+        (funcall fun))))
+
+(defun eldoro-get-task-heading (&optional marker)
+  "Returns the heading text for the heading at MARKER or at the
+active marker if MARKER is nil."
+  (eldoro-at-marker
+   marker
+   (lambda () (substring-no-properties (org-get-heading t t)))))
 
 (defun eldoro-parent-task-heading ()
   "Returns the heading text for the task Eldoro was started on."
@@ -381,13 +406,31 @@ the marker associated with the task at point."
 
 (defun eldoro-record-pomodoro ()
   "Increment the number of pomodori for the active task."
-  ;; FIXME: implement me.
-  )
+  (if eldoro-record-in-properties
+      (eldoro-inc-org-prop eldoro-pomodoro-property)))
 
 (defun eldoro-record-interruption ()
   "Increment the number of interruptions for the active task."
-  ;; FIXME: implement me.
-  )
+  (if eldoro-record-in-properties
+      (eldoro-inc-org-prop eldoro-interruption-property)))
+
+(defun eldoro-get-org-prop (name &optional missing marker)
+  "Return the value for the given property.  If the property is
+missing return the value of MISSING.  By default the property is
+looked up on the active org heading unless MARKER is given."
+  (eldoro-at-marker
+   marker (lambda () (or (org-entry-get (point) name) missing))))
+
+(defun eldoro-set-org-prop (name value &optional marker)
+  "Set the property NAME to VALUE for MARKER or the active
+heading."
+  (eldoro-at-marker
+   marker (lambda () (org-entry-put (point) name value))))
+
+(defun eldoro-inc-org-prop (name &optional marker)
+  (let* ((s (eldoro-get-org-prop name "0" marker))
+         (n (1+ (string-to-number s))))
+    (eldoro-set-org-prop name (number-to-string n) marker)))
 
 (defun eldoro-send-notification ()
   "Send a notification that a pomodoro or break ended."
