@@ -5,12 +5,14 @@
 ** TODO Optionally clock in and out of org headings 
 ** TODO Use TAB to jump to the heading in an org buffer
 ** TODO Automated Tests
+** TODO Don't redraw the entire buffer
 ** DONE Record the pomodori/breaks in the org file
    CLOSED: [2012-09-04 Tue 13:03]
 ** DONE Use font-locking for major sections
    CLOSED: [2012-08-31 Fri 13:49]
 * Bugs
-** TODO Point jumps to 0 when buffer isn't focused
+** DONE Point jumps to 0 when buffer isn't focused
+   CLOSED: [2012-09-04 Tue 14:36]
    When the Eldoro buffer is in a window, but that window isn't
    focused, when the eldoro-update function is done running point is
    at (point-min) for some reason.  This doesn't happen if the buffer
