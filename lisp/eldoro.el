@@ -64,6 +64,12 @@ title of the current task."
   :type 'string
   :group 'eldoro)
 
+(defcustom eldoro-use-org-clock nil
+  "If non-nil, start the org mode clock when starting a pomodoro
+and stop it for an interruption or break."
+  :type 'boolean
+  :group 'eldoro)
+
 (defcustom eldoro-record-in-properties t
   "If non-nil, record the number of pomodori and interruptions
 into the source org buffer using properties."
@@ -124,6 +130,7 @@ counts."
     (define-key map (kbd "q")   'eldoro-quit)
     (define-key map (kbd "r")   'eldoro-reset-counters)
     (define-key map (kbd "s")   'eldoro-clock-stop)
+    (define-key map (kbd "TAB") 'eldoro-jump-to-heading)
     (define-key map (kbd "RET") 'eldoro-clock-next)
     map)
   "Keymap used in Eldoro mode.")
@@ -211,7 +218,8 @@ prompting."
     (setq eldoro--active-marker marker
           eldoro--countdown-start (float-time)
           eldoro--countdown-type (eldoro-next-clock-type)
-          eldoro--sent-notification nil))
+          eldoro--sent-notification nil)
+    (if (eq eldoro--countdown-type 'work) (eldoro-org-clock-start)))
   (eldoro-update))
 
 (defun eldoro-clock-stop (&optional interruption)
@@ -219,6 +227,7 @@ prompting."
 abort the current pomodoro due to an interruption."
   (interactive "P")
   (if (not eldoro--countdown-start) (error "No task is in progress"))
+  (eldoro-org-clock-stop)
   (let ((restarting nil))
     (cond
      ;; Stop working (not an interruption).
@@ -249,6 +258,15 @@ abort the current pomodoro due to an interruption."
 new pomodoro."
   (interactive)
   (if eldoro--countdown-start (eldoro-clock-stop t)))
+
+(defun eldoro-jump-to-heading ()
+  "With point on an Eldoro task, make the source org buffer
+current and jump to the matching heading."
+  (interactive)
+  (let ((marker (eldoro-task-p)))
+    (if (not marker) (error "Please move point to an Eldoro task."))
+    (switch-to-buffer (marker-buffer marker))
+    (goto-char (marker-position marker))))
 
 (defun eldoro-reset-counters (&optional force)
   "Reset the counters used to track pomodori, breaks, and
@@ -444,6 +462,18 @@ heading."
   (let* ((s (eldoro-get-org-prop name "0" marker))
          (n (1+ (string-to-number s))))
     (eldoro-set-org-prop name (number-to-string n) marker)))
+
+(defun eldoro-org-clock-start ()
+  "Start the org-mode clock for the active heading."
+  (when eldoro-use-org-clock
+    (eldoro-at-marker
+     eldoro--active-marker (lambda () (org-clock-in)))))
+
+(defun eldoro-org-clock-stop ()
+  "Stop a running org-mode clock."
+  (when (and eldoro-use-org-clock eldoro--countdown-start)
+    (eldoro-at-marker
+     eldoro--active-marker (lambda () (org-clock-out t)))))
 
 (defun eldoro-send-notification ()
   "Send a notification that a pomodoro or break ended."

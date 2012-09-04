@@ -2,10 +2,12 @@
 #+author: Peter Jones
 
 * Features
-** TODO Optionally clock in and out of org headings 
-** TODO Use TAB to jump to the heading in an org buffer
 ** TODO Automated Tests
 ** TODO Don't redraw the entire buffer
+** DONE Optionally clock in and out of org headings 
+   CLOSED: [2012-09-04 Tue 15:41]
+** DONE Use TAB to jump to the heading in an org buffer
+   CLOSED: [2012-09-04 Tue 15:26]
 ** DONE Record the pomodori/breaks in the org file
    CLOSED: [2012-09-04 Tue 13:03]
 ** DONE Use font-locking for major sections
