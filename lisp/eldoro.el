@@ -110,13 +110,13 @@ counts."
 (defvar eldoro--start-time nil)
 (defvar eldoro--source-marker nil)
 (defvar eldoro--active-marker nil)
-(defvar eldoro--previous-marker nil)
 (defvar eldoro--countdown-type nil)
 (defvar eldoro--countdown-start nil)
 (defvar eldoro--pomodori 0)
 (defvar eldoro--breaks 0)
 (defvar eldoro--interrupts 0)
 (defvar eldoro--leave-point 0)
+(defvar eldoro--first-task 0)
 (defvar eldoro--timer nil)
 (defvar eldoro--sent-notification nil)
 (defvar eldoro--skip-update nil)
@@ -249,7 +249,6 @@ abort the current pomodoro due to an interruption."
     (unless restarting
       (setq eldoro--countdown-start nil
             eldoro--countdown-type nil
-            eldoro--previous-marker eldoro--active-marker
             eldoro--active-marker nil))
     (eldoro-update)))
 
@@ -342,7 +341,6 @@ the marker associated with the task at point."
         eldoro--countdown-start nil
         eldoro--sent-notification nil
         eldoro--leave-point 0
-        eldoor--previous-marker nil
         eldoro--source-marker nil
         eldoro--active-marker nil))
 
@@ -359,8 +357,11 @@ the marker associated with the task at point."
 
 (defun eldoro-draw-buffer ()
   "Write the contents of the Eldoro buffer."
-  (let ((buf (get-buffer eldoro-buffer-name)))
-    (setq eldoro--leave-point 0)
+  (let ((buf (get-buffer eldoro-buffer-name))
+        (size-before (buffer-size))
+        (size-after 0)
+        (eldoro--leave-point (point))
+        (eldoro--first-task 0))
     (erase-buffer)
     (eldoro-draw-stats)
     (insert (propertize (concat (eldoro-parent-task-heading) ":")
@@ -368,6 +369,9 @@ the marker associated with the task at point."
     (insert "\n\n")
     (eldoro-map-tree 'eldoro-draw-heading)
     (set-buffer-modified-p nil)
+    (setq eldoro--leave-point
+          (if (= 0 size-before) eldoro--first-task
+            (+ eldoro--leave-point (- (buffer-size) size-before))))
     (goto-char eldoro--leave-point)
     (dolist (w (window-list))
       (if (eq (window-buffer w) buf)
@@ -398,16 +402,13 @@ the marker associated with the task at point."
   (let ((heading (substring-no-properties (org-get-heading t t)))
         (mark (point-marker))
         (prompt (make-string (length eldoro-current-task-prompt) ? ))
-        task active previous)
+        task active)
     (if (equal mark eldoro--active-marker)
         (setq prompt eldoro-current-task-prompt active t))
-    (setq previous (equal mark eldoro--previous-marker))
     (setq task (concat prompt heading))
     (put-text-property 0 (length task) 'eldoro-src mark task)
     (with-current-buffer eldoro-buffer-name
-      (when (or active (= eldoro--leave-point 0)
-                (and (not eldoro--active-marker) previous))
-        (setq eldoro--leave-point (point)))
+      (if (= eldoro--first-task 0) (setq eldoro--first-task (point)))
       (if active (insert (propertize task 'face 'eldoro-active-task))
         (insert task))
       (insert "\n"))))

@@ -3,7 +3,6 @@
 
 * Features
 ** TODO Automated Tests
-** TODO Don't redraw the entire buffer
 ** DONE Optionally clock in and out of org headings 
    CLOSED: [2012-09-04 Tue 15:41]
 ** DONE Use TAB to jump to the heading in an org buffer
