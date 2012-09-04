@@ -1,7 +1,9 @@
 #+title: To-do List for Eldoro
 #+author: Peter Jones
+#+startup: content
 
 * Features
+** TODO Optionally skip headings marked as done
 ** TODO Automated Tests
 ** DONE Optionally clock in and out of org headings 
    CLOSED: [2012-09-04 Tue 15:41]
