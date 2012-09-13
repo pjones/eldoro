@@ -171,6 +171,7 @@ prompting."
   :group 'eldoro
   (setq buffer-read-only t
         truncate-lines t)
+  (buffer-disable-undo)
   (eldoro-timer-stop)
   (setq eldoro--timer (run-at-time nil 10 'eldoro-update)))
 
