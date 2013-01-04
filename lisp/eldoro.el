@@ -400,19 +400,23 @@ the marker associated with the task at point."
     (insert "\n")))
 
 (defun eldoro-draw-heading ()
-  (let ((heading (substring-no-properties (org-get-heading t t)))
-        (mark (point-marker))
-        (prompt (make-string (length eldoro-current-task-prompt) ? ))
-        task active)
+  (let* ((heading (substring-no-properties (org-get-heading t t)))
+         (mark (point-marker))
+         (prompt (make-string (length eldoro-current-task-prompt) ? ))
+         (estimate (eldoro-get-org-prop "ELDORO_ESTIMATE" "0" mark))
+         (done (eldoro-get-org-prop "ELDORO_POMODORI" "0" mark))
+         (stats (format "[%02d/%02d] "
+                        (string-to-number done)
+                        (string-to-number estimate)))
+         task active)
     (if (equal mark eldoro--active-marker)
         (setq prompt eldoro-current-task-prompt active t))
-    (setq task (concat prompt heading))
+    (setq task (concat prompt stats heading "\n"))
     (put-text-property 0 (length task) 'eldoro-src mark task)
     (with-current-buffer eldoro-buffer-name
       (if (= eldoro--first-task 0) (setq eldoro--first-task (point)))
       (if active (insert (propertize task 'face 'eldoro-active-task))
-        (insert task))
-      (insert "\n"))))
+        (insert task)))))
 
 (defun eldoro-at-marker (marker fun)
   "Move to MARKER and apply FUN."
