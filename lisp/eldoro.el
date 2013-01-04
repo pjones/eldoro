@@ -76,6 +76,12 @@ into the source org buffer using properties."
   :type 'boolean
   :group 'eldoro)
 
+(defcustom eldoro-estimate-property "ELDORO_ESTIMATE"
+  "The name of the org-mode property in which to read pomodoro
+estimates."
+  :type 'string
+  :group 'eldoro)
+
 (defcustom eldoro-pomodoro-property "ELDORO_POMODORI"
   "The name of the org-mode property in which to store pomodoro
 counts."
@@ -403,8 +409,8 @@ the marker associated with the task at point."
   (let* ((heading (substring-no-properties (org-get-heading t t)))
          (mark (point-marker))
          (prompt (make-string (length eldoro-current-task-prompt) ? ))
-         (estimate (eldoro-get-org-prop "ELDORO_ESTIMATE" "0" mark))
-         (done (eldoro-get-org-prop "ELDORO_POMODORI" "0" mark))
+         (estimate (eldoro-get-org-prop eldoro-estimate-property "0" mark))
+         (done (eldoro-get-org-prop eldoro-pomodoro-property "0" mark))
          (stats (format "[%02d/%02d] "
                         (string-to-number done)
                         (string-to-number estimate)))
