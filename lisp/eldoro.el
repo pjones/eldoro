@@ -31,6 +31,11 @@
   :type 'integer
   :group 'eldoro)
 
+(defcustom eldoro-show-help t
+  "Whether to show a short help message in the Eldoro buffer or not."
+  :type 'boolean
+  :group 'eldoro)
+
 (defcustom eldoro-current-task-prompt " > "
   "The string to place in front of the active task."
   :type 'string
@@ -113,6 +118,7 @@ counts."
 (defvar eldoro-buffer-name "*Eldoro*"
   "The name of the buffer used to show pomodoros.")
 
+(defvar eldoro--show-help nil)
 (defvar eldoro--start-time nil)
 (defvar eldoro--source-marker nil)
 (defvar eldoro--active-marker nil)
@@ -131,13 +137,13 @@ counts."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "b")   'bury-buffer)
     (define-key map (kbd "g")   'eldoro-update)
-    (define-key map (kbd "h")   'describe-mode)
+    (define-key map (kbd "h")   'eldoro-toggle-help)
     (define-key map (kbd "i")   'eldoro-interruption)
     (define-key map (kbd "q")   'eldoro-quit)
-    (define-key map (kbd "r")   'eldoro-reset-counters)
-    (define-key map (kbd "s")   'eldoro-clock-stop)
+    (define-key map (kbd "r")   'eldoro-reset-statistics)
+    (define-key map (kbd "s")   'eldoro-stop-clock)
     (define-key map (kbd "TAB") 'eldoro-jump-to-heading)
-    (define-key map (kbd "RET") 'eldoro-clock-next)
+    (define-key map (kbd "RET") 'eldoro-next-action)
     map)
   "Keymap used in Eldoro mode.")
 
@@ -156,7 +162,7 @@ prompting."
    ((and (string= major-mode "org-mode")
          (or (not eldoro--source-marker) force-reset
              (y-or-n-p "Reset Eldoro from this org buffer? ")))
-    (if eldoro--countdown-start (eldoro-clock-stop))
+    (if eldoro--countdown-start (eldoro-stop-clock))
     (eldoro-reset-vars)
     (save-excursion
       (org-back-to-heading)
@@ -200,23 +206,23 @@ prompting."
   "Stop the current timer and kill the Eldoro buffer."
   (interactive)
   (when (y-or-n-p "Really quit Eldoro? ")
-    (if eldoro--countdown-start (eldoro-clock-stop))
+    (if eldoro--countdown-start (eldoro-stop-clock))
     (eldoro-timer-stop)
     (eldoro-reset-vars)
     (kill-buffer eldoro-buffer-name)))
 
-(defun eldoro-clock-next ()
+(defun eldoro-next-action ()
   "Start the next appropriate clock (pomodoro or break)."
   (interactive)
   (let ((eldoro--skip-update t))
     (if (not (eldoro-task-p)) (error "Please move point to a task first"))
     (let ((old eldoro--countdown-type))
-      (if eldoro--countdown-start (eldoro-clock-stop))
+      (if eldoro--countdown-start (eldoro-stop-clock))
       (setq eldoro--countdown-type old))
-    (eldoro-clock-start))
+    (eldoro-start-clock))
   (eldoro-update))
 
-(defun eldoro-clock-start ()
+(defun eldoro-start-clock ()
   "Start a pomodoro or break clock for the task at point."
   (interactive)
   (if eldoro--countdown-start (error "A task is still in progress"))
@@ -229,7 +235,7 @@ prompting."
     (if (eq eldoro--countdown-type 'work) (eldoro-org-clock-start)))
   (eldoro-update))
 
-(defun eldoro-clock-stop (&optional interruption)
+(defun eldoro-stop-clock (&optional interruption)
   "Stop the current pomodoro/break clock.  With a prefix argument
 abort the current pomodoro due to an interruption."
   (interactive "P")
@@ -263,7 +269,7 @@ abort the current pomodoro due to an interruption."
   "Abort the current pomodoro due to an interruption and start a
 new pomodoro."
   (interactive)
-  (if eldoro--countdown-start (eldoro-clock-stop t)))
+  (if eldoro--countdown-start (eldoro-stop-clock t)))
 
 (defun eldoro-jump-to-heading ()
   "With point on an Eldoro task, make the source org buffer
@@ -274,7 +280,7 @@ current and jump to the matching heading."
     (switch-to-buffer (marker-buffer marker))
     (goto-char (marker-position marker))))
 
-(defun eldoro-reset-counters (&optional force)
+(defun eldoro-reset-statistics (&optional force)
   "Reset the counters used to track pomodori, breaks, and
 interruptions.  With a prefix argument don't prompt for
 confirmation."
@@ -282,6 +288,13 @@ confirmation."
   (when (or force (y-or-n-p "Really reset Eldoro counters? "))
     (eldoro-really-reset-counters)
     (eldoro-update)))
+
+(defun eldoro-toggle-help ()
+  "Toggle whether or not a brief help message is displayed in the
+Eldoro buffer."
+  (interactive)
+  (setq eldoro--show-help (not eldoro--show-help))
+  (eldoro-update))
 
 ;;;-------------------------------------------------------------------------
 ;;; Internal Functions.
@@ -342,9 +355,10 @@ the marker associated with the task at point."
 
 (defun eldoro-reset-vars ()
   "Reset all internal variables tied to a given org file."
-  (if eldoro--countdown-start (eldoro-clock-stop))
+  (if eldoro--countdown-start (eldoro-stop-clock))
   (if (not eldoro--start-time) (setq eldoro--start-time (current-time)))
-  (setq eldoro--countdown-type nil
+  (setq eldoro--show-help eldoro-show-help
+        eldoro--countdown-type nil
         eldoro--countdown-start nil
         eldoro--sent-notification nil
         eldoro--leave-point 0
@@ -371,6 +385,7 @@ the marker associated with the task at point."
         (eldoro--first-task 0))
     (erase-buffer)
     (eldoro-draw-stats)
+    (if eldoro--show-help (eldoro-draw-help))
     (insert (propertize (concat (eldoro-parent-task-heading) ":")
                         'face 'eldoro-header))
     (insert "\n\n")
@@ -404,6 +419,16 @@ the marker associated with the task at point."
     (insert (concat indent "         Breaks: " breaks "\n"))
     (insert (concat indent "  Interruptions: " interrupts "\n"))
     (insert "\n")))
+
+(defun eldoro-draw-help ()
+  (let ((help (substitute-command-keys "\\{eldoro-mode-map}"))
+        (indent (make-string (length eldoro-current-task-prompt) ? ))
+        (offset 0))
+    (while (string-match "^\\([^[:space:]]\\)" help offset)
+      (setq help (replace-match (concat indent "\\1") t nil help))
+      (setq offset (+ 2 offset)))
+    (insert (propertize "Eldoro Help:" 'face 'eldoro-header))
+    (insert (concat "\n\n" help))))
 
 (defun eldoro-draw-heading ()
   (let* ((heading (substring-no-properties (org-get-heading t t)))
