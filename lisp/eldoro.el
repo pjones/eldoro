@@ -337,6 +337,10 @@ Eldoro buffer."
 ;;; Internal Functions.
 ;;;-------------------------------------------------------------------------
 
+;; Silence a compiler warning
+(declare-function org-clock-in "org-clock")
+(declare-function org-clock-out "org-clock")
+
 (defun eldoro-map-tree (eldoro-fun)
   "Call ELDORO-FUN for each child in the org source tree."
   (let ((start-level))
@@ -417,7 +421,6 @@ the marker associated with the task at point."
   "Write the contents of the Eldoro buffer."
   (let ((buf (get-buffer eldoro-buffer-name))
         (size-before (buffer-size))
-        (size-after 0)
         (eldoro--leave-point (point))
         (eldoro--first-task 0))
     (erase-buffer)
