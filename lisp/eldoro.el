@@ -1,12 +1,49 @@
-;;; eldoro.el -- A pomodoro timer that works with org-mode
+;;; -*- lexical-binding: t -*-
+;;; eldoro.el -- A pomodoro timer/tracker that works with org-mode.
 
-;;; Code
+;; Copyright (C) 2012-2013 Peter Jones <pjones@pmade.com>
+;;
+;; Author: Peter Jones <pjones@pmade.com>
+;; URL: https://github.com/pjones/eldoro
+;; Version: 0.1.0
+;;
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
+;;
+;; Eldoro is a simple Pomodoro timer and tracker for Emacs.  You
+;; define your tasks in an org-mode buffer then start Eldoro which
+;; helps you see your estimates and pomodori, along with a clock and
+;; notification system.
+
+;;; License:
+;;
+;; Permission is hereby granted, free of charge, to any person obtaining
+;; a copy of this software and associated documentation files (the
+;; "Software"), to deal in the Software without restriction, including
+;; without limitation the rights to use, copy, modify, merge, publish,
+;; distribute, sublicense, and/or sell copies of the Software, and to
+;; permit persons to whom the Software is furnished to do so, subject to
+;; the following conditions:
+;;
+;; The above copyright notice and this permission notice shall be
+;; included in all copies or substantial portions of the Software.
+;;
+;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+;; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+;; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+;; LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+;; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+;;; Code:
 (eval-when-compile
   (require 'org)
   (require 'org-clock))
 
 (defgroup eldoro nil
-  "A pomodoro timer that works with org-mode."
+  "A pomodoro timer that works with `org-mode'."
   :version "0.1.0"
   :prefix "eldoro-"
   :group 'applications)
@@ -27,7 +64,7 @@
   :group 'eldoro)
 
 (defcustom eldoro-long-break-after 4
-  "The number of work blocks after which a long break is taken."
+  "The number of pomodori after which a long break is taken."
   :type 'integer
   :group 'eldoro)
 
@@ -48,8 +85,8 @@
 
 (defcustom eldoro-notify-function 'org-notify
   "A function to call to notify the user that a pomodoro or break
-  has expired.  The function should take a single argument, a
-  string to display to the user."
+has expired.  The function should take a single argument, a
+string to display to the user."
   :type 'function
   :group 'eldoro)
 
@@ -82,20 +119,20 @@ into the source org buffer using properties."
   :group 'eldoro)
 
 (defcustom eldoro-estimate-property "ELDORO_ESTIMATE"
-  "The name of the org-mode property in which to read pomodoro
+  "The name of the `org-mode' property in which to read pomodoro
 estimates."
   :type 'string
   :group 'eldoro)
 
 (defcustom eldoro-pomodoro-property "ELDORO_POMODORI"
-  "The name of the org-mode property in which to store pomodoro
+  "The name of the `org-mode' property in which to store pomodoro
 counts."
   :type 'string
   :group 'eldoro)
 
 (defcustom eldoro-interruption-property "ELDORO_INTERRUPTIONS"
-  "The name of the org-mode property in which to store
-  interruption counts."
+  "The name of the `org-mode' property in which to store
+interruption counts."
   :type 'string
   :group 'eldoro)
 
@@ -149,11 +186,11 @@ counts."
 
 ;;;###autoload
 (defun eldoro (&optional force-reset)
-  "Start Eldoro on the current org-mode heading.  If Eldoro is
+  "Start Eldoro on the current `org-mode' heading.  If Eldoro is
 already running bring its buffer forward.
 
 If Eldoro has already been started and this function is called
-from an org-mode buffer, prompt for permission to reset the
+from an `org-mode' buffer, prompt for permission to reset the
 Eldoro tasks.  With a prefix argument force a reset without
 prompting."
   (interactive)
@@ -276,7 +313,7 @@ new pomodoro."
 current and jump to the matching heading."
   (interactive)
   (let ((marker (eldoro-task-p)))
-    (if (not marker) (error "Please move point to an Eldoro task."))
+    (if (not marker) (error "Please move point to an Eldoro task"))
     (switch-to-buffer (marker-buffer marker))
     (goto-char (marker-position marker))))
 
@@ -312,13 +349,13 @@ Eldoro buffer."
                         (funcall eldoro-fun))))))))
 
 (defun eldoro-children-count ()
-  "Returns the number of child headings in the org doc."
+  "Return the number of child headings in the org doc."
   (let ((children 0))
     (eldoro-map-tree (lambda () (setq children (1+ children))))
     children))
 
 (defun eldoro-task-p ()
-  "Returns nil if point isn't on a Eldoro task, otherwise returns
+  "Return nil if point isn't on a Eldoro task, otherwise returns
 the marker associated with the task at point."
   (with-current-buffer eldoro-buffer-name
     (get-text-property (point) 'eldoro-src)))
@@ -339,7 +376,7 @@ the marker associated with the task at point."
             (/ (- (float-time) countdown) 60))))
 
 (defun eldoro-duration ()
-  "Returns the number of minutes the clock should run for."
+  "Return the number of minutes the clock should run for."
   (cond
    ((eq eldoro--countdown-type 'work)
     eldoro-work-time)
@@ -458,18 +495,18 @@ the marker associated with the task at point."
         (funcall fun))))
 
 (defun eldoro-get-task-heading (&optional marker)
-  "Returns the heading text for the heading at MARKER or at the
+  "Return the heading text for the heading at MARKER or at the
 active marker if MARKER is nil."
   (eldoro-at-marker
    marker
    (lambda () (substring-no-properties (org-get-heading t t)))))
 
 (defun eldoro-parent-task-heading ()
-  "Returns the heading text for the task Eldoro was started on."
+  "Return the heading text for the task Eldoro was started on."
   (eldoro-get-task-heading eldoro--source-marker))
 
 (defun eldoro-active-task-heading ()
-  "Returns the heading text for the active task."
+  "Return the heading text for the active task."
   (eldoro-get-task-heading eldoro--active-marker))
 
 (defun eldoro-record-pomodoro ()
@@ -501,13 +538,13 @@ heading."
     (eldoro-set-org-prop name (number-to-string n) marker)))
 
 (defun eldoro-org-clock-start ()
-  "Start the org-mode clock for the active heading."
+  "Start the `org-mode' clock for the active heading."
   (when eldoro-use-org-clock
     (eldoro-at-marker
      eldoro--active-marker (lambda () (org-clock-in)))))
 
 (defun eldoro-org-clock-stop ()
-  "Stop a running org-mode clock."
+  "Stop a running `org-mode' clock."
   (when (and eldoro-use-org-clock eldoro--countdown-start)
     (eldoro-at-marker
      eldoro--active-marker (lambda () (org-clock-out t)))))
@@ -523,3 +560,7 @@ heading."
                (format msg (eldoro-active-task-heading))))))
 
 (provide 'eldoro)
+
+(provide 'eldoro)
+
+;;; eldoro.el ends here

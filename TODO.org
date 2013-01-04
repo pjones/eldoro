@@ -20,5 +20,6 @@
    focused, when the eldoro-update function is done running point is
    at (point-min) for some reason.  This doesn't happen if the buffer
    isn't in a window, or if the buffer is in the focused window.
-** TODO Buffer is keeping undo information
+** DONE Buffer is keeping undo information
+   CLOSED: [2013-01-04 Fri 16:27]
    - Eventually you get a warning about too much undo information.
