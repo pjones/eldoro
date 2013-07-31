@@ -563,7 +563,4 @@ heading."
                (format msg (eldoro-active-task-heading))))))
 
 (provide 'eldoro)
-
-(provide 'eldoro)
-
 ;;; eldoro.el ends here
