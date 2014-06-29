@@ -251,12 +251,26 @@ prompting."
 (defun eldoro-next-action ()
   "Start the next appropriate clock (pomodoro or break)."
   (interactive)
-  (let ((eldoro--skip-update t))
-    (if (not (eldoro-task-p)) (error "Please move point to a task first"))
-    (let ((old eldoro--countdown-type))
-      (if eldoro--countdown-start (eldoro-stop-clock))
-      (setq eldoro--countdown-type old))
+  (let ((eldoro--skip-update t)
+        (old eldoro--countdown-type)
+        (marker (eldoro-task-p))
+        (old-marker eldoro--active-marker))
+    (if (not marker) (error "Please move point to a task first"))
+
+    ;; Clock is running, figure out what to do.
+    (when eldoro--countdown-start
+      (eldoro-stop-clock)
+
+      ;; If we're on the same task that was previously running then
+      ;; reset the counter type so that starting the clock switches to
+      ;; a break.
+      (if (and marker (equal marker old-marker))
+          (setq eldoro--countdown-type old)))
+
+    ;; Restart the clock;
     (eldoro-start-clock))
+
+  ;; Now update the display.
   (eldoro-update))
 
 (defun eldoro-start-clock ()
