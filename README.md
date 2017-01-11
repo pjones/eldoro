@@ -41,17 +41,16 @@ API for logging Eldoro statistics into a drawer.
 This mode runs the hook `eldoro-mode-hook`, as the final step
 during initialization.
 
-key             binding
----             -------
-
-TAB		eldoro-jump-to-heading
-RET		eldoro-next-action
-b		bury-buffer
-g		eldoro-update
-h		eldoro-toggle-help
-i		eldoro-interruption
-q		eldoro-quit
-r		eldoro-reset-statistics
-s		eldoro-stop-clock
+|key|binding|
+|---|-------|
+|TAB|eldoro-jump-to-heading|
+|RET|eldoro-next-action|
+|b|bury-buffer|
+|g|eldoro-update|
+|h|eldoro-toggle-help|
+|i|eldoro-interruption|
+|q|eldoro-quit|
+|r|eldoro-reset-statistics|
+|s|eldoro-stop-clock|
 
 
